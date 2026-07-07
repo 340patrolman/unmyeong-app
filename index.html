@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>운명 분석 v0.6 — 사주·자미두수·점성술</title>
+<title>운명 분석 v0.7 — 사주·자미두수·점성술</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, "Malgun Gothic", sans-serif; background: #1a1a2e; color: #eaeaea; padding: 16px; max-width: 640px; margin: 0 auto; }
@@ -46,7 +46,7 @@ button.ghost { background: #33335555; color: #c0c0d8; border: 1px solid #44446a;
 </style>
 </head>
 <body>
-<h1>운명 분석 <span class="badge">v0.6 · 사주+자미두수+점성술</span></h1>
+<h1>운명 분석 <span class="badge">v0.7 · 사주+자미두수+점성술</span></h1>
 <div class="sub">계산은 코드, 해석은 사람 · 참고용 성찰 도구</div>
 
 <div class="card">
@@ -91,11 +91,11 @@ button.ghost { background: #33335555; color: #c0c0d8; border: 1px solid #44446a;
 
 <div class="card">
 <h2>엔진 자가 검증</h2>
-<button class="ghost" onclick="runTests()">검증 세트 37건 실행</button>
+<button class="ghost" onclick="runTests()">검증 세트 43건 실행</button>
 <div class="testout" id="testOut" style="display:none"></div>
 </div>
 
-<div class="note">v0.6 규칙: 사주 = 절기·진태양시·합국 가중(학파 따라 상이) · 점성술 = astronomy-engine(스위스 에페메리스 대조 오차 0.1분각 이하 검증) · 자미두수 = iztro 라이브러리 · 하우스 미구현(상승궁만) · 본 도구는 참고용이며 의료·투자·법률 판단의 근거가 아닙니다.</div>
+<div class="note">v0.7 규칙: 사주 = 절기·진태양시·합국 가중(학파 따라 상이) · 점성술 = astronomy-engine(스위스 에페메리스 대조 오차 0.1분각 이하 검증) · 자미두수 = iztro 라이브러리 · 하우스 미구현(상승궁만) · 본 도구는 참고용이며 의료·투자·법률 판단의 근거가 아닙니다.</div>
 
 <script>
 /*
@@ -558,10 +558,19 @@ function ziweiChart(dateStr, hourBranchIdx, lateZi, gender) {
   const ti = lateZi ? 12 : hourBranchIdx;
   const chart = iztro.astro.bySolar(Y + "-" + M + "-" + D, ti, gender === "M" ? "남" : "여", true, "ko-KR");
   const soul = chart.palaces.find(p => p.name && p.name.includes("명"));
+  const mutagens = [];
+  for (const pal of chart.palaces) {
+    for (const st of [...pal.majorStars, ...pal.minorStars]) {
+      if (st.mutagen) mutagens.push({ star: st.name, type: st.mutagen, palace: pal.name });
+    }
+  }
+  const MUT_ORDER = { "록":0, "권":1, "과":2, "기":3 };
+  mutagens.sort((a,b) => (MUT_ORDER[a.type]??9) - (MUT_ORDER[b.type]??9));
   return {
     soul_branch: soul ? soul.earthlyBranch : "?",
     soul_stars: soul ? soul.majorStars.map(s => s.name) : [],
-    five_class: chart.fiveElementsClass, soul_star: chart.soul, body_star: chart.body
+    five_class: chart.fiveElementsClass, soul_star: chart.soul, body_star: chart.body,
+    mutagens
   };
 }
 function skyNow(now) {
@@ -644,11 +653,69 @@ function interpretProfile(p){
   if (p.ziwei && !p.ziwei.error && p.ziwei.soul_stars.length) {
     paras.push("자미두수 명궁(" + p.ziwei.soul_branch + "궁)의 " + p.ziwei.soul_stars.join("·") + " — " + p.ziwei.soul_stars.map(st => ZW_DESC[st] || st).join(" / ") + ". 오행국은 " + p.ziwei.five_class + ".");
   }
+  const dayElem = STEM_ELEM[dsIdx];
+  const inseongElem = (dayElem + 4) % 5;
+  const support = sorted.find(x => ELEM_IDX[x[0]] === dayElem)[1].pct + sorted.find(x => ELEM_IDX[x[0]] === inseongElem)[1].pct;
+  const grade = support >= 55 ? "신강" : (support >= 45 ? "중화" : "신약");
+  const topGroup = GROUP_OF[topTG];
+  let ekbu = "일간 세력(비겁+인성) " + Math.round(support*10)/10 + "% → " + grade + " 판정(간이 억부 기준).";
+  if (topPct >= 35 && REMEDY[topGroup]) {
+    const remedyElem = { "인성": ELEM[(dayElem+4)%5], "비겁": ELEM[dayElem], "식상": ELEM[(dayElem+1)%5], "재성": ELEM[(dayElem+2)%5], "관성": ELEM[(dayElem+3)%5] }[REMEDY[topGroup][0]];
+    ekbu += " " + topGroup + "이 " + topPct + "%로 태왕한 구조라, 고전 처방은 " + REMEDY[topGroup][1] + " — 곧 " + remedyElem + "(" + REMEDY[topGroup][0] + ") 기운의 활용입니다.";
+  }
+  paras.push(ekbu);
+  const ygz = currentYearGZ(new Date());
+  if (ygz) {
+    const yStemTG = tenGod(dsIdx, ygz.idx % 10);
+    const yBranchTG = tenGod(dsIdx, branchMainStem(ygz.idx % 12));
+    paras.push("세운: 올해 " + ygz.stem + ygz.branch + "년은 천간 " + yStemTG + " · 지지 " + yBranchTG + "의 해 — " + (TG_MEAN[yStemTG]||"") + "의 흐름이 한 해를 관통합니다.");
+  }
+  if (p.astro) {
+    const asp = computeAspects(p.astro);
+    if (asp.length) {
+      const top2 = asp.slice(0,2).map(x => x.a + "-" + x.b + " " + x.name + "(" + ASPECT_MEAN[x.name] + ")").join(", ");
+      paras.push("네이탈 각도 " + asp.length + "개 중 가장 정밀한 것: " + top2 + ".");
+    }
+  }
+  if (p.ziwei && p.ziwei.mutagens && p.ziwei.mutagens.length) {
+    const lu = p.ziwei.mutagens.find(m => m.type === "록");
+    const ji = p.ziwei.mutagens.find(m => m.type === "기");
+    let zt = "생년사화: " + p.ziwei.mutagens.map(m => m.star + " 화" + m.type).join(" · ") + ".";
+    if (lu) zt += " 복이 들어오는 자리는 " + lu.palace + "궁(" + lu.star + " 화록)";
+    if (ji) zt += ", 관리가 필요한 자리는 " + ji.palace + "궁(" + ji.star + " 화기)";
+    zt += ".";
+    paras.push(zt);
+  }
   const fireRank = sorted.findIndex(x => x[0] === "화");
   paras.push("시류: 지금은 9운(離火, 2024~2043) — 명에서 화가 " + (fireRank <= 1 ? "강한 편이라 시대 기운과 공명이 큰" : "강하지 않아 시대의 과열과 거리를 둘 수 있는") + " 구조입니다.");
   paras.push("※ 위 문장은 통설 기반 규칙으로 자동 생성된 참고용 초안입니다.");
   return paras.map(t => "<p>" + t + "</p>").join("");
 }
+
+
+const ASPECT_DEFS = [[0,"합"],[60,"육각"],[90,"사각"],[120,"삼각"],[180,"충"]];
+const ASPECT_MEAN = { "합":"융합", "육각":"조화와 기회", "사각":"긴장과 과제", "삼각":"타고난 순풍", "충":"대립을 통한 자각" };
+function computeAspects(astroList){
+  const pl = astroList.filter(x => x.name !== "상승궁");
+  const out = [];
+  for (let i = 0; i < pl.length; i++) for (let j = i+1; j < pl.length; j++) {
+    let d = Math.abs(pl[i].lon - pl[j].lon); d = Math.min(d, 360-d);
+    for (const [ang, nm] of ASPECT_DEFS) {
+      if (Math.abs(d - ang) <= 6) out.push({ a: pl[i].name, b: pl[j].name, deg: Math.round(d*10)/10, name: nm, orb: Math.abs(d-ang) });
+    }
+  }
+  out.sort((x,y) => x.orb - y.orb);
+  return out;
+}
+function currentYearGZ(now){
+  const utcMin = Math.floor(now.getTime()/60000);
+  let pos = -1;
+  for (let i = 0; i < JIEQI_TABLE.length; i++){ if (JIEQI_TABLE[i][0] <= utcMin) pos = i; else break; }
+  return pos >= 0 ? gz(JIEQI_TABLE[pos][1]) : null;
+}
+const GROUP_OF = { "비견":"비겁","겁재":"비겁","식신":"식상","상관":"식상","편재":"재성","정재":"재성","편관":"관성","정관":"관성","편인":"인성","정인":"인성" };
+const REMEDY = { "관성":["인성","억누르는 기운을 학문·수용(인성)으로 통관해 일간을 돕는 것"], "재성":["비겁","넘치는 재물 기운을 감당하도록 비겁(동료·자기 힘)으로 일간을 보강하는 것"], "식상":["인성","쏟아내는 기운을 인성으로 다스리는 것"], "인성":["재성","과한 수용을 재성(현실 활동)으로 푸는 것"], "비겁":["식상","넘치는 자기 세력을 식상(표현·생산)으로 흘려보내는 것"] };
+const ELEM_IDX = { "목":0,"화":1,"토":2,"금":3,"수":4 };
 
 const POS = ["시주","일주","월주","년주"];
 const ELEM_COLOR = { "목":"#6fbf73", "화":"#e07a5f", "토":"#c9a227", "금":"#a8b0bd", "수":"#5f8fe0" };
@@ -679,13 +746,16 @@ function renderResult(p){
   document.getElementById("daeunBadge").textContent = s.daewoon.direction + " · 대운수 " + s.daewoon.su;
   document.getElementById("daeunBox").innerHTML = s.daewoon.list.map(d =>
     '<div class="daeun' + (cur.start_age === d.start_age ? " cur" : "") + '"><div class="age">' + d.start_age + '세~</div><div class="gz">' + d.stem + d.branch + '</div></div>').join("");
+  const asp = computeAspects(p.astro);
   document.getElementById("astroBox").innerHTML = p.astro.map(a =>
-    '<div class="astro-row"><span>' + a.name + '</span><span>' + fmtDeg(a.lon) + '</span></div>').join("");
+    '<div class="astro-row"><span>' + a.name + '</span><span>' + fmtDeg(a.lon) + '</span></div>').join("")
+    + (asp.length ? '<div class="note" style="margin-top:6px">주요 각도: ' + asp.slice(0,5).map(x => x.a + "-" + x.b + " " + x.name + "(" + x.deg + "°)").join(" · ") + '</div>' : "");
   const z = p.ziwei;
   document.getElementById("ziweiBox").innerHTML = z && !z.error
     ? '<div class="astro-row"><span>명궁</span><span>' + z.soul_branch + '궁 · ' + (z.soul_stars.join("·") || "주성 없음(차성안궁)") + '</span></div>'
       + '<div class="astro-row"><span>오행국</span><span>' + z.five_class + '</span></div>'
       + '<div class="astro-row"><span>명주/신주</span><span>' + z.soul_star + " / " + z.body_star + '</span></div>'
+      + (z.mutagens && z.mutagens.length ? '<div class="astro-row"><span>생년사화</span><span>' + z.mutagens.map(m => m.star + " 화" + m.type + "(" + m.palace + ")").join(" · ") + '</span></div>' : "")
     : '<div class="note">자미두수 산출 실패</div>';
   document.getElementById("interpBox").innerHTML = interpretProfile(p);
   document.getElementById("resultName").textContent = p.name + " 종합 분석";
@@ -827,10 +897,19 @@ function runTests(){
   check("다음 절기 = 입추 2026-08-07", nj && nj.name === "입추" && nj.date === "2026-08-07", nj ? nj.name + " " + nj.date : "null");
   const fm = nextFullMoonInfo(fixedNow2);
   check("다음 보름달 7~8월 내", fm.date >= "2026-07-08" && fm.date <= "2026-08-10", fm.date + " " + fm.km + "km");
+  const aspA = computeAspects(natalChart("1970-02-19","21:50",37.48,126.978));
+  check("A 목성-토성 충 검출 (스위스 대조)", aspA.some(x => ((x.a==="목성"&&x.b==="토성")||(x.a==="토성"&&x.b==="목성")) && x.name==="충"), aspA.length + "개");
+  check("A 어스펙트 9개", aspA.length === 9, String(aspA.length));
+  const zwA = ziweiChart("1970-02-19", 11, false, "M");
+  check("A 사화: 태양 화록 (경간 공식)", zwA.mutagens.some(m => m.star==="태양" && m.type==="록"), zwA.mutagens.map(m=>m.star+m.type).join(","));
+  check("A 사화: 천동 화기", zwA.mutagens.some(m => m.star==="천동" && m.type==="기"));
+  const ygzT = currentYearGZ(new Date("2026-07-08T03:00:00Z"));
+  check("2026 세운 = 병오년", ygzT && ygzT.stem + ygzT.branch === "병오", ygzT ? ygzT.stem+ygzT.branch : "null");
   const rpt = interpretProfile({ name:"T", date:"1970-02-19", saju: A,
     astro: natalChart("1970-02-19","21:50",37.48,126.978),
     ziwei: ziweiChart("1970-02-19", 11, false, "M") });
   check("해석 리포트 생성·관성 언급", rpt.length > 300 && rpt.includes("편관"), rpt.length + "자");
+  check("A 리포트: 관살 태왕 → 토(인성) 통관 처방", rpt.includes("관성이") && rpt.includes("토(인성)"), "");
   out += "\n" + pass + " / " + total + " 통과";
   const el = document.getElementById("testOut");
   el.innerHTML = out; el.style.display = "block";
