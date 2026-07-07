@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>운명 분석 v0.5 — 사주·자미두수·점성술</title>
+<title>운명 분석 v0.6 — 사주·자미두수·점성술</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, "Malgun Gothic", sans-serif; background: #1a1a2e; color: #eaeaea; padding: 16px; max-width: 640px; margin: 0 auto; }
@@ -46,7 +46,7 @@ button.ghost { background: #33335555; color: #c0c0d8; border: 1px solid #44446a;
 </style>
 </head>
 <body>
-<h1>운명 분석 <span class="badge">v0.5 · 사주+자미두수+점성술</span></h1>
+<h1>운명 분석 <span class="badge">v0.6 · 사주+자미두수+점성술</span></h1>
 <div class="sub">계산은 코드, 해석은 사람 · 참고용 성찰 도구</div>
 
 <div class="card">
@@ -78,6 +78,8 @@ button.ghost { background: #33335555; color: #c0c0d8; border: 1px solid #44446a;
 <div id="astroBox"></div>
 <div class="sec-title">자미두수 <span class="badge">iztro</span></div>
 <div id="ziweiBox"></div>
+<div class="sec-title">해석 리포트 <span class="badge">규칙 기반 1판</span></div>
+<div id="interpBox" style="font-size:15px; line-height:1.7; color:#d8d8e8"></div>
 <div class="note" id="resultNote"></div>
 </div>
 
@@ -89,11 +91,11 @@ button.ghost { background: #33335555; color: #c0c0d8; border: 1px solid #44446a;
 
 <div class="card">
 <h2>엔진 자가 검증</h2>
-<button class="ghost" onclick="runTests()">검증 세트 32건 실행</button>
+<button class="ghost" onclick="runTests()">검증 세트 37건 실행</button>
 <div class="testout" id="testOut" style="display:none"></div>
 </div>
 
-<div class="note">v0.5 규칙: 사주 = 절기·진태양시·합국 가중(학파 따라 상이) · 점성술 = astronomy-engine(스위스 에페메리스 대조 오차 0.1분각 이하 검증) · 자미두수 = iztro 라이브러리 · 하우스 미구현(상승궁만) · 본 도구는 참고용이며 의료·투자·법률 판단의 근거가 아닙니다.</div>
+<div class="note">v0.6 규칙: 사주 = 절기·진태양시·합국 가중(학파 따라 상이) · 점성술 = astronomy-engine(스위스 에페메리스 대조 오차 0.1분각 이하 검증) · 자미두수 = iztro 라이브러리 · 하우스 미구현(상승궁만) · 본 도구는 참고용이며 의료·투자·법률 판단의 근거가 아닙니다.</div>
 
 <script>
 /*
@@ -572,6 +574,82 @@ function skyNow(now) {
 }
 
 
+
+function retrogradePlanets(now){
+  const list = [["수성","Mercury"],["금성","Venus"],["화성","Mars"],["목성","Jupiter"],["토성","Saturn"]];
+  const out = [];
+  for (const [kr,en] of list){
+    const l1 = planetLon(en, now), l2 = planetLon(en, new Date(now.getTime()+86400000));
+    const d = ((l2 - l1 + 540) % 360) - 180;
+    if (d < 0) out.push(kr);
+  }
+  return out;
+}
+const JIE_NAME = { "인":"입춘","묘":"경칩","진":"청명","사":"입하","오":"망종","미":"소서","신":"입추","유":"백로","술":"한로","해":"입동","자":"대설","축":"소한" };
+function nextJieqiInfo(now){
+  const utcMin = Math.floor(now.getTime()/60000);
+  for (const e of JIEQI_TABLE){
+    if (e[0] > utcMin){
+      const g = gz(e[2]);
+      return { date: new Date(e[0]*60000).toISOString().slice(0,10), name: JIE_NAME[g.branch] || "절기", month: g.stem + g.branch };
+    }
+  }
+  return null;
+}
+function nextFullMoonInfo(now){
+  const q = Astronomy.SearchMoonPhase(180, now, 40);
+  const km = Astronomy.GeoMoon(q.date).Length() * 149597870.69;
+  return { date: q.date.toISOString().slice(0,10), km: Math.round(km), superMoon: km < 360000 };
+}
+const METEORS = [[1,3,"사분의자리"],[8,12,"페르세우스"],[10,21,"오리온"],[12,14,"쌍둥이자리"]];
+function nextMeteorInfo(now){
+  const y = now.getUTCFullYear();
+  for (const [m,d,name] of METEORS){
+    const dt = new Date(Date.UTC(y, m-1, d));
+    if (dt >= now) return { date: dt.toISOString().slice(0,10), name };
+  }
+  return { date: (y+1) + "-01-03", name: "사분의자리" };
+}
+
+const STEM_DESC = { "갑":"큰 나무의 기상 — 곧고 추진력 있는 시작의 힘", "을":"덩굴과 화초 — 유연하게 길을 찾는 생명력", "병":"태양의 불 — 만천하를 비추는 개방성과 열정", "정":"등불의 불 — 어둠을 밝히는 집중과 섬세함", "무":"큰 산의 흙 — 묵직한 신뢰와 포용", "기":"밭의 흙 — 실속 있게 기르고 가꾸는 힘", "경":"무쇠와 바위 — 결단력과 의리, 개혁의 금", "신":"보석과 칼날 — 정밀하고 예리한 완성의 금", "임":"큰 바다의 물 — 스케일 크고 유연한 지혜", "계":"이슬과 시냇물 — 스며들어 적시는 통찰" };
+const TG_MEAN = { "비견":"자립과 주관", "겁재":"경쟁과 확장", "식신":"표현과 생산", "상관":"재능과 파격", "편재":"기회 포착과 활동 재물", "정재":"성실 관리와 안정 재물", "편관":"도전·압박·결단", "정관":"질서·책임·명예", "편인":"직관과 탐구", "정인":"학문과 수용" };
+const SIGN_DESC = { "양자리":"개척과 돌파", "황소자리":"안정과 축적", "쌍둥이자리":"소통과 기민함", "게자리":"보호와 정서", "사자자리":"존재감과 자부심", "처녀자리":"분석과 완벽", "천칭자리":"균형과 관계", "전갈자리":"몰입과 통찰", "궁수자리":"확장과 자유", "염소자리":"성취와 책임", "물병자리":"혁신과 독립", "물고기자리":"공감과 상상" };
+const ZW_DESC = { "자미":"제왕성 — 통솔과 품격", "천부":"창고성 — 안정과 관리", "탐랑":"욕망성 — 다재다능과 사교", "태양":"권위성 — 공적 명예", "거문":"언변성 — 논리와 시비 분별", "천기":"지혜성 — 기획과 변화", "무곡":"재물성 — 실행과 결단", "천동":"복덕성 — 낙천과 조화", "염정":"차도성 — 원칙과 개성", "천상":"인장성 — 보좌와 신용", "천량":"음덕성 — 보호와 연륜", "칠살":"장군성 — 승부와 개척", "파군":"파괴성 — 혁파와 재건", "태음":"전답성 — 감성과 축재" };
+
+function interpretProfile(p){
+  const s = p.saju;
+  const ds = s.pillars.day.stem;
+  const paras = [];
+  paras.push("일간 " + ds + "(" + s.pillars.day.hanja[0] + ") — " + (STEM_DESC[ds] || ""));
+  const sorted = Object.entries(s.strength.scores).sort((a,b)=>b[1].pct-a[1].pct);
+  const topElem = sorted[0][0], topPct = sorted[0][1].pct, lowElem = sorted[4][0], lowPct = sorted[4][1].pct;
+  const elemYangStem = { "목":0, "화":2, "토":4, "금":6, "수":8 };
+  const dsIdx = STEMS.indexOf(ds);
+  const topTG = tenGod(dsIdx, elemYangStem[topElem]);
+  const lowTG = tenGod(dsIdx, elemYangStem[lowElem]);
+  let w = "오행 중 " + topElem + "(" + topPct + "%)가 가장 강해 " + topTG + " 계열, 곧 " + (TG_MEAN[topTG]||"") + "의 기운이 삶의 중심 과제로 놓입니다. 반대로 " + lowElem + "(" + lowPct + "%)는 약해 " + (TG_MEAN[lowTG]||"") + " 영역은 의식적인 보완이 필요합니다.";
+  if (s.strength.combos && s.strength.combos.length) w += " (" + s.strength.combos.join(", ") + " 반영)";
+  paras.push(w);
+  const cur = currentDaeun(s, new Date(p.date), new Date());
+  if (cur.stem) {
+    const curTG = tenGod(dsIdx, STEMS.indexOf(cur.stem));
+    paras.push("현재 " + cur.stem + cur.branch + " 대운(" + cur.start_age + "~" + (cur.start_age+9) + "세)은 천간 기준 " + curTG + "의 시기 — " + (TG_MEAN[curTG]||"") + "이(가) 전면에 나오는 구간입니다.");
+  }
+  if (p.astro) {
+    const g = n => p.astro.find(x=>x.name===n);
+    const sun = g("태양"), moon = g("달"), asc = g("상승궁");
+    const sn = l => SIGNS[Math.floor(l/30)];
+    paras.push("서양 점성술로는 태양 " + sn(sun.lon) + "(" + SIGN_DESC[sn(sun.lon)] + "), 달 " + sn(moon.lon) + "(" + SIGN_DESC[sn(moon.lon)] + "), 상승 " + sn(asc.lon) + "(" + SIGN_DESC[sn(asc.lon)] + ") — 겉모습은 상승궁, 내면 정서는 달, 삶의 방향은 태양이 말합니다.");
+  }
+  if (p.ziwei && !p.ziwei.error && p.ziwei.soul_stars.length) {
+    paras.push("자미두수 명궁(" + p.ziwei.soul_branch + "궁)의 " + p.ziwei.soul_stars.join("·") + " — " + p.ziwei.soul_stars.map(st => ZW_DESC[st] || st).join(" / ") + ". 오행국은 " + p.ziwei.five_class + ".");
+  }
+  const fireRank = sorted.findIndex(x => x[0] === "화");
+  paras.push("시류: 지금은 9운(離火, 2024~2043) — 명에서 화가 " + (fireRank <= 1 ? "강한 편이라 시대 기운과 공명이 큰" : "강하지 않아 시대의 과열과 거리를 둘 수 있는") + " 구조입니다.");
+  paras.push("※ 위 문장은 통설 기반 규칙으로 자동 생성된 참고용 초안입니다.");
+  return paras.map(t => "<p>" + t + "</p>").join("");
+}
+
 const POS = ["시주","일주","월주","년주"];
 const ELEM_COLOR = { "목":"#6fbf73", "화":"#e07a5f", "토":"#c9a227", "금":"#a8b0bd", "수":"#5f8fe0" };
 const LS_KEY = "unmyeong_profiles_v1";
@@ -609,6 +687,7 @@ function renderResult(p){
       + '<div class="astro-row"><span>오행국</span><span>' + z.five_class + '</span></div>'
       + '<div class="astro-row"><span>명주/신주</span><span>' + z.soul_star + " / " + z.body_star + '</span></div>'
     : '<div class="note">자미두수 산출 실패</div>';
+  document.getElementById("interpBox").innerHTML = interpretProfile(p);
   document.getElementById("resultName").textContent = p.name + " 종합 분석";
   document.getElementById("resultNote").textContent = "진태양시 보정 " + s.true_solar_correction_minutes + "분 · 현재 만 " + cur.age + "세" + (cur.stem ? " · " + cur.stem + cur.branch + " 대운 중" : "");
   document.getElementById("resultCard").style.display = "block";
@@ -672,6 +751,10 @@ function renderSky(){
       '<div class="astro-row"><span>목성(세성) 현재</span><span>' + sky.jupiter + '</span></div>'
       + '<div class="astro-row"><span>다음 일식</span><span>' + sky.solar + '</span></div>'
       + '<div class="astro-row"><span>다음 월식</span><span>' + sky.lunar + '</span></div>'
+      + '<div class="astro-row"><span>역행 중 행성</span><span>' + (retrogradePlanets(new Date()).join("·") || "없음") + '</span></div>'
+      + (function(){ const j = nextJieqiInfo(new Date()); return j ? '<div class="astro-row"><span>다음 절기</span><span>' + j.name + ' ' + j.date + '</span></div>' : ""; })()
+      + (function(){ const f = nextFullMoonInfo(new Date()); return '<div class="astro-row"><span>다음 보름달</span><span>' + f.date + (f.superMoon ? " (슈퍼문)" : "") + '</span></div>'; })()
+      + (function(){ const m = nextMeteorInfo(new Date()); return '<div class="astro-row"><span>다음 유성우</span><span>' + m.name + ' ' + m.date + '</span></div>'; })()
       + '<div class="astro-row"><span>삼원구운</span><span>9운 이(離) 화(火) · 2024~2043</span></div>';
   } catch(e){ document.getElementById("skyBox").innerHTML = '<div class="note">천문 계산 실패: ' + e.message + '</div>'; }
 }
@@ -736,6 +819,18 @@ function runTests(){
     check("A 오행국 토오국", zA.five_class === "토오국", zA.five_class);
     check("B 자미두수 명궁 신 · 자미천부", zB.soul_branch === "신" && zB.soul_stars.join("") === "자미천부", zB.soul_branch + " " + zB.soul_stars.join(","));
   } catch(e){ check("자미두수 산출", false, e.message); }
+  const fixedNow2 = new Date("2026-07-08T03:00:00Z");
+  const retro = retrogradePlanets(fixedNow2);
+  check("2026-07-08 수성 역행 (스위스 대조)", retro.includes("수성"), retro.join(","));
+  check("2026-07-08 목성 순행", !retro.includes("목성"));
+  const nj = nextJieqiInfo(fixedNow2);
+  check("다음 절기 = 입추 2026-08-07", nj && nj.name === "입추" && nj.date === "2026-08-07", nj ? nj.name + " " + nj.date : "null");
+  const fm = nextFullMoonInfo(fixedNow2);
+  check("다음 보름달 7~8월 내", fm.date >= "2026-07-08" && fm.date <= "2026-08-10", fm.date + " " + fm.km + "km");
+  const rpt = interpretProfile({ name:"T", date:"1970-02-19", saju: A,
+    astro: natalChart("1970-02-19","21:50",37.48,126.978),
+    ziwei: ziweiChart("1970-02-19", 11, false, "M") });
+  check("해석 리포트 생성·관성 언급", rpt.length > 300 && rpt.includes("편관"), rpt.length + "자");
   out += "\n" + pass + " / " + total + " 통과";
   const el = document.getElementById("testOut");
   el.innerHTML = out; el.style.display = "block";
