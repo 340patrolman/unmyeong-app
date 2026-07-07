@@ -34,6 +34,35 @@ function branchMainStem(branchIdx) {
   return h[h.length - 1][0];
 }
 
+function detectCombos(pillars) {
+  const bs = new Set(["year","month","day","hour"].map(k => BRANCHES.indexOf(pillars[k].branch)));
+  const combos = [];
+  const SAMHAP = [
+    { set: [8,0,4], king: 0, elem: 4, name: "신자진 삼합 수국" },
+    { set: [11,3,7], king: 3, elem: 0, name: "해묘미 삼합 목국" },
+    { set: [2,6,10], king: 6, elem: 1, name: "인오술 삼합 화국" },
+    { set: [5,9,1], king: 9, elem: 3, name: "사유축 삼합 금국" }
+  ];
+  const BANGHAP = [
+    { set: [2,3,4], elem: 0, name: "인묘진 방합 목국" },
+    { set: [5,6,7], elem: 1, name: "사오미 방합 화국" },
+    { set: [8,9,10], elem: 3, name: "신유술 방합 금국" },
+    { set: [11,0,1], elem: 4, name: "해자축 방합 수국" }
+  ];
+  for (const h of SAMHAP) {
+    const hit = h.set.filter(b => bs.has(b));
+    if (hit.length === 3) combos.push({ name: h.name, elem: h.elem, bonus: 60 });
+    else if (hit.length === 2 && hit.includes(h.king)) {
+      const names = hit.map(b => BRANCHES[b]).join("");
+      combos.push({ name: names + " 반합 " + ELEM[h.elem] + "국", elem: h.elem, bonus: 30 });
+    }
+  }
+  for (const h of BANGHAP) {
+    if (h.set.every(b => bs.has(b))) combos.push({ name: h.name, elem: h.elem, bonus: 45 });
+  }
+  return combos;
+}
+
 function computeStrength(pillars) {
   const score = [0,0,0,0,0];
   for (const key of ["year","month","day","hour"]) {
@@ -44,10 +73,13 @@ function computeStrength(pillars) {
     const w = key === "month" ? 1.5 : 1.0;
     for (const [s, days] of HIDDEN[brIdx]) score[STEM_ELEM[s]] += days * w;
   }
+  const combos = detectCombos(pillars);
+  for (const c of combos) score[c.elem] += c.bonus;
   const total = score.reduce((a,b) => a+b, 0);
   const out = {};
   ELEM.forEach((e,i) => out[e] = { raw: Math.round(score[i]*10)/10, pct: Math.round(score[i]/total*1000)/10 });
-  return { method: "지장간 분일 + 월지 1.5배 가중 (삼합·회국 미반영)", scores: out };
+  return { method: "지장간 분일 + 월지 1.5배 + 합국 가중(삼합60·반합30·방합45)",
+           combos: combos.map(c => c.name + " (+" + c.bonus + ")"), scores: out };
 }
 
 function computeSaju(input, table) {
@@ -114,9 +146,9 @@ function computeSaju(input, table) {
     strength: computeStrength(pillars),
     daewoon: { direction: forward ? "순행" : "역행", su: daeunSu, list: daeun },
     true_solar_correction_minutes: adjMin,
-    engine_version: "0.2",
+    engine_version: "0.3",
     rules: { day_change: "진태양시 23:00 일진 교체(전통)", jieqi_time_basis: "표준시(절입 절대시각)",
-             strength_method: "지장간 분일 + 월지 1.5배 (삼합·회국 미반영)",
+             strength_method: "지장간 분일 + 월지 1.5배 + 합국 가중(삼합60·반합30·방합45, 학파 따라 상이)",
              daeun_method: "3일=1년 절기 거리, 반올림, 최소 1" }
   };
 }

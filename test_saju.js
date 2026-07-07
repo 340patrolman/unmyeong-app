@@ -41,6 +41,10 @@ check("B 현재 대운 = 정축(49세~)", dB.stem + dB.branch === "정축" && dB
 const sA = A.strength.scores;
 check("A 왕쇠 합계 100%", Math.abs(Object.values(sA).reduce((a,x)=>a+x.pct,0) - 100) < 1,
       Object.entries(sA).map(([k,v])=>k+v.pct).join(" "));
+check("A 인오술 삼합 화국 검출", A.strength.combos.some(c => c.includes("인오술 삼합 화국")), A.strength.combos.join(","));
+check("A 화 최강 (관살 태왕 재현)", Object.entries(sA).sort((a,b)=>b[1].pct-a[1].pct)[0][0] === "화");
+check("B 사유 반합 금국 검출", B.strength.combos.some(c => c.includes("반합 금국")), B.strength.combos.join(","));
+check("B 금 최강 (재다신약 재현)", Object.entries(B.strength.scores).sort((a,b)=>b[1].pct-a[1].pct)[0][0] === "금");
 
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL`);
 process.exit(fail ? 1 : 0);
