@@ -6,16 +6,55 @@ const HOUR_STEM_START = {0:0, 5:0, 1:2, 6:2, 2:4, 7:4, 3:6, 8:6, 4:8, 9:8};
 const ANCHOR_DAYS = 10957;
 const ANCHOR_IDX = 54;
 
+const ELEM = ["목","화","토","금","수"];
+const STEM_ELEM = [0,0,1,1,2,2,3,3,4,4];
+const HIDDEN = {
+  0:[[8,10],[9,20]], 1:[[9,9],[7,3],[5,18]], 2:[[4,7],[2,7],[0,16]],
+  3:[[0,10],[1,20]], 4:[[1,9],[9,3],[4,18]], 5:[[4,7],[6,7],[2,16]],
+  6:[[2,10],[5,9],[3,11]], 7:[[3,9],[1,3],[5,18]], 8:[[4,7],[8,7],[6,16]],
+  9:[[6,10],[7,20]], 10:[[7,9],[3,3],[4,18]], 11:[[4,7],[0,7],[8,16]]
+};
+const TEN_GODS = ["비견","겁재","식신","상관","편재","정재","편관","정관","편인","정인"];
+
 function gz(idx) {
   const i = ((idx % 60) + 60) % 60;
   return { stem: STEMS[i % 10], branch: BRANCHES[i % 12],
            hanja: STEMS_H[i % 10] + BRANCHES_H[i % 12], idx: i };
 }
 
+function tenGod(dayStemIdx, otherStemIdx) {
+  const de = STEM_ELEM[dayStemIdx], oe = STEM_ELEM[otherStemIdx];
+  const rel = ((oe - de) % 5 + 5) % 5;
+  const samePolarity = (dayStemIdx % 2) === (otherStemIdx % 2);
+  return TEN_GODS[rel * 2 + (samePolarity ? 0 : 1)];
+}
+
+function branchMainStem(branchIdx) {
+  const h = HIDDEN[branchIdx];
+  return h[h.length - 1][0];
+}
+
+function computeStrength(pillars) {
+  const score = [0,0,0,0,0];
+  for (const key of ["year","month","day","hour"]) {
+    const p = pillars[key];
+    const stemIdx = STEMS.indexOf(p.stem);
+    score[STEM_ELEM[stemIdx]] += 30;
+    const brIdx = BRANCHES.indexOf(p.branch);
+    const w = key === "month" ? 1.5 : 1.0;
+    for (const [s, days] of HIDDEN[brIdx]) score[STEM_ELEM[s]] += days * w;
+  }
+  const total = score.reduce((a,b) => a+b, 0);
+  const out = {};
+  ELEM.forEach((e,i) => out[e] = { raw: Math.round(score[i]*10)/10, pct: Math.round(score[i]/total*1000)/10 });
+  return { method: "지장간 분일 + 월지 1.5배 가중 (삼합·회국 미반영)", scores: out };
+}
+
 function computeSaju(input, table) {
   const [Y, M, D] = input.date.split("-").map(Number);
   const [h, mi] = input.time.split(":").map(Number);
   const lon = input.lon;
+  const gender = input.gender || "M";
   const adjMin = Math.round((lon - 135) * 4);
 
   const epochDays = Math.floor(Date.UTC(Y, M - 1, D) / 86400000);
@@ -34,7 +73,7 @@ function computeSaju(input, table) {
     const mid = (lo + hi) >> 1;
     if (table[mid][0] <= utcMin) { pos = mid; lo = mid + 1; } else { hi = mid - 1; }
   }
-  if (pos < 0) throw new Error("지원 범위(1920~2050) 이전 출생");
+  if (pos < 0 || pos >= table.length - 1) throw new Error("지원 범위(1920~2050) 밖 출생");
   const yearGZ = gz(table[pos][1]);
   const monthGZ = gz(table[pos][2]);
 
@@ -42,11 +81,52 @@ function computeSaju(input, table) {
   const hourGZ = { stem: STEMS[hourStemIdx], branch: BRANCHES[hourBranchIdx],
                    hanja: STEMS_H[hourStemIdx] + BRANCHES_H[hourBranchIdx] };
 
+  const pillars = { year: yearGZ, month: monthGZ, day: dayGZ, hour: hourGZ };
+
+  const dayStemIdx = dayIdx % 10;
+  const sipsin = {};
+  for (const key of ["year","month","hour"]) {
+    const sIdx = STEMS.indexOf(pillars[key].stem);
+    sipsin[key + "_stem"] = tenGod(dayStemIdx, sIdx);
+  }
+  sipsin.day_stem = "일간";
+  for (const key of ["year","month","day","hour"]) {
+    const bIdx = BRANCHES.indexOf(pillars[key].branch);
+    sipsin[key + "_branch"] = tenGod(dayStemIdx, branchMainStem(bIdx));
+  }
+
+  const yearStemIdx = yearGZ.idx % 10;
+  const forward = ((yearStemIdx % 2 === 0) === (gender === "M"));
+  let boundaryMin;
+  if (forward) boundaryMin = table[pos + 1][0];
+  else boundaryMin = table[pos][0];
+  const diffDays = Math.abs(boundaryMin - utcMin) / 1440;
+  let daeunSu = Math.round(diffDays / 3);
+  if (daeunSu < 1) daeunSu = 1;
+  const daeun = [];
+  for (let i = 1; i <= 8; i++) {
+    const n = forward ? (monthGZ.idx + i) : (monthGZ.idx - i);
+    daeun.push({ start_age: daeunSu + (i-1)*10, ...gz(n) });
+  }
+
   return {
-    pillars: { year: yearGZ, month: monthGZ, day: dayGZ, hour: hourGZ },
+    pillars, sipsin,
+    strength: computeStrength(pillars),
+    daewoon: { direction: forward ? "순행" : "역행", su: daeunSu, list: daeun },
     true_solar_correction_minutes: adjMin,
-    rules: { day_change: "진태양시 23:00 일진 교체(전통)", jieqi_time_basis: "표준시(절입 절대시각)" }
+    engine_version: "0.2",
+    rules: { day_change: "진태양시 23:00 일진 교체(전통)", jieqi_time_basis: "표준시(절입 절대시각)",
+             strength_method: "지장간 분일 + 월지 1.5배 (삼합·회국 미반영)",
+             daeun_method: "3일=1년 절기 거리, 반올림, 최소 1" }
   };
 }
 
-if (typeof module !== "undefined") module.exports = { computeSaju, gz };
+function currentDaeun(saju, birthDate, asOfDate) {
+  const age = Math.floor((asOfDate - birthDate) / (365.2425 * 86400000));
+  for (let i = saju.daewoon.list.length - 1; i >= 0; i--) {
+    if (age >= saju.daewoon.list[i].start_age) return { age, ...saju.daewoon.list[i] };
+  }
+  return { age, note: "대운 진입 전" };
+}
+
+if (typeof module !== "undefined") module.exports = { computeSaju, currentDaeun, gz, tenGod };
